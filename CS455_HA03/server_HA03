@@ -1,0 +1,79 @@
+import socket
+import os
+import threading
+
+def file_to_client(client_socket, filepath):
+    if os.path.exists(filepath):
+        client_socket.send('file_transfer'.encode('utf-8'))
+        filename = os.path.basename(filepath)
+        client_socket.send(filename.encode('utf-8'))
+        filesize = os.path.getsize(filepath)
+        client_socket.send(str(filesize).encode('utf-8'))
+
+        with open(filepath, 'rb') as file:
+            bytes_sent = 0
+            while bytes_sent < filesize:
+                data = file.read(1024)
+                client_socket.send(data)
+                bytes_sent += len(data)
+
+        print(f"{filename} sent successfully")
+    else:
+        print("Error: File does not exist")
+        
+def receive_file(client_socket):
+    filename = client_socket.recv(1024).decode('utf-8').strip()
+    filesize = int(client_socket.recv(1024).decode('utf-8').strip())
+
+    with open(filename, 'wb') as file:
+        print(f"Receiving file: {filename} ({filesize} bytes)")
+        bytes_received = 0
+        while bytes_received < filesize:
+            data = client_socket.recv(1024)
+            file.write(data)
+            bytes_received += len(data)
+    
+    print(f"{filename} received successfully")
+    
+def send_messages(client_socket):
+    while True:
+        server_message = input("Server: ")
+        if server_message.lower() == "close":
+            client_socket.send("close".encode('utf-8'))
+            break
+        elif server_message.startswith("share"):
+            _, filepath = server_message.split(maxsplit=1)
+            file_to_client(client_socket, filepath)
+        else:
+            client_socket.send(server_message.encode('utf-8'))
+
+def receive_messages(client_socket):
+    while True:
+        try:
+            client_message = client_socket.recv(1024).decode('utf-8')
+
+            if client_message.lower() == "close":
+                print("Client disconnected.")
+                break
+            elif client_message.lower() == "file_transfer":
+                receive_file(client_socket)
+            else:
+                print(f"\nFrom Client: {client_message}")
+                print("Server: ", end="", flush=True)
+        except ConnectionError:
+            break
+
+def run_server():
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_ip = "127.0.0.1"
+    port = 8000
+    server_socket.bind((server_ip, port))
+    server_socket.listen(1)
+    print(f"Server listening on {server_ip}:{port}")
+    client_socket, client_address = server_socket.accept()
+    print(f"Accepted connection from {client_address[0]}:{client_address[1]}")
+    
+    threading.Thread(target=receive_messages, args=(client_socket,)).start()
+    threading.Thread(target=send_messages, args=(client_socket,)).start()
+
+run_server()
